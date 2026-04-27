@@ -4,7 +4,10 @@ import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { Upload, CheckCircle2, AlertCircle, Download, Hourglass, Moon, Sun, Image } from "lucide-react";
+import { 
+  Upload, CheckCircle2, AlertCircle, Download, 
+  Hourglass, Moon, Sun, Image, Layout, Settings, History 
+} from "lucide-react";
 
 interface ProgressData {
   total: number;
@@ -29,208 +32,178 @@ export default function CardGenerator() {
   const generateCardsMutation = trpc.card.generateCards.useMutation();
 
   useEffect(() => {
-    const socket = io({ reconnection: true, reconnectionDelay: 1000, reconnectionDelayMax: 5000, reconnectionAttempts: 5 });
-    socket.on("connect", () => { console.log("Connected to server"); socket.emit("join", sessionId); });
+    const socket = io({ reconnection: true });
+    socket.on("connect", () => { socket.emit("join", sessionId); });
     socket.on("progress", (data: ProgressData) => setProgress(data));
     socket.on("error", (message: string) => { setError(message); setIsProcessing(false); });
     socketRef.current = socket;
     return () => { socket.disconnect(); };
   }, [sessionId]);
 
+  // --- Lógica de Estilo (Inspirado no GitHub) ---
+  const colors = {
+    bg: isDark ? "bg-[#0d1117]" : "bg-[#f6f8fa]",
+    sidebar: isDark ? "bg-[#010409] border-[#30363d]" : "bg-[#ffffff] border-[#d0d7de]",
+    card: isDark ? "bg-[#161b22] border-[#30363d]" : "bg-[#ffffff] border-[#d0d7de]",
+    textMain: isDark ? "text-[#c9d1d9]" : "text-[#24292f]",
+    textHeading: isDark ? "text-[#f0f6fc]" : "text-[#1f2328]",
+    accent: "bg-[#238636] hover:bg-[#2ea043]", // Verde padrão "New Project" do GitHub
+    blue: "text-[#58a6ff]"
+  };
+
   const handleFileSelect = (selectedFile: File | null | undefined) => {
     if (!selectedFile) return;
-    if (!selectedFile.name.endsWith(".xlsx")) { setError("Por favor, selecione um arquivo .xlsx válido"); return; }
-    if (selectedFile.size > 10 * 1024 * 1024) { setError("O arquivo não pode exceder 10MB"); return; }
+    if (!selectedFile.name.endsWith(".xlsx")) { setError("Por favor, selecione um arquivo .xlsx"); return; }
     setFile(selectedFile);
     setError(null);
-    setZipPath(null);
-    setProgress(null);
-    setOriginalFileName(null);
-  };
-
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    handleFileSelect(e.target.files?.[0]);
-  };
-
-  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => { e.preventDefault(); setIsDragging(true); };
-  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => { e.preventDefault(); setIsDragging(false); };
-  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setIsDragging(false);
-    const droppedFile = e.dataTransfer.files[0];
-    handleFileSelect(droppedFile);
   };
 
   const handleUpload = async () => {
-    if (!file) { setError("Por favor, selecione um arquivo"); return; }
+    if (!file) return;
     setIsProcessing(true);
-    setError(null);
-    setProgress(null);
-    setZipPath(null);
     try {
       const formData = new FormData();
       formData.append("file", file);
       const uploadResponse = await fetch("/api/upload", { method: "POST", body: formData });
-      if (!uploadResponse.ok) throw new Error("Erro ao fazer upload do arquivo");
       const { filePath, fileName } = await uploadResponse.json();
-      setOriginalFileName(fileName);
       const result = await generateCardsMutation.mutateAsync({ filePath, sessionId, originalFileName: fileName });
       if (result.success) setZipPath(result.zipPath);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro ao processar arquivo");
+      setError("Erro ao processar arquivo");
     } finally {
       setIsProcessing(false);
     }
   };
 
-  const handleDownload = async () => {
-    if (!zipPath) return;
-    try {
-      const response = await fetch(`/api/download?zipPath=${encodeURIComponent(zipPath)}`);
-      if (!response.ok) throw new Error("Erro ao baixar arquivo");
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = zipPath?.split("/").pop() || "cards.zip";
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro ao baixar arquivo");
-    }
-  };
-
-  const bgColor = isDark ? "bg-gradient-to-br from-gray-900 via-blue-950 to-purple-950" : "bg-gradient-to-br from-slate-100 via-blue-100 to-purple-100";
-  const cardBg = isDark ? "bg-white/10 backdrop-blur-lg border border-white/20" : "bg-white/50 backdrop-blur-lg border border-white/80";
-  const textPrimary = isDark ? "text-white" : "text-slate-900";
-  const textSecondary = isDark ? "text-slate-300" : "text-slate-600";
-  const borderColor = isDark ? "border-white/20" : "border-slate-300/50";
-  const accentColor = isDark ? "text-cyan-300" : "text-blue-600";
-  const uploadBg = isDark ? "bg-black/20" : "bg-white/30";
-  const uploadBorder = isDragging ? (isDark ? 'border-cyan-300' : 'border-blue-600') : (isDark ? "border-white/30 hover:border-white/50" : "border-blue-300/80 hover:border-blue-400");
-
   return (
-    <div className={`min-h-screen py-12 px-4 sm:px-6 lg:px-8 transition-colors duration-500 ${bgColor}`}>
-      <div className="max-w-5xl mx-auto">
-        <div className="flex items-center justify-between mb-16">
-          <div className="flex items-center space-x-4">
-            <div>
-              <h1 className={`text-3xl font-bold ${textPrimary}`}>Gerador de Cards</h1>
-            </div>
+    <div className={`flex min-h-screen ${colors.bg} ${colors.textMain} transition-all`}>
+      
+      {/* Sidebar - Similar à do GitHub */}
+      <aside className={`w-64 border-r hidden md:flex flex-col ${colors.sidebar}`}>
+        <div className="p-4 flex items-center space-x-2 border-b border-inherit">
+          <Layout className={colors.blue} />
+          <span className="font-bold">Cards Dashboard</span>
+        </div>
+        <nav className="p-4 space-y-2 flex-grow">
+          <div className={`flex items-center space-x-3 p-2 rounded-md ${isDark ? 'bg-[#1f6feb]/10 text-[#58a6ff]' : 'bg-[#0969da]/10 text-[#0969da]'}`}>
+            <History size={18} /> <span>Recentes</span>
           </div>
-          <button onClick={() => setIsDark(!isDark)} className={`p-3 rounded-full transition-all duration-300 backdrop-blur-sm ${isDark ? "bg-white/10 hover:bg-white/20 text-yellow-400" : "bg-black/10 hover:bg-black/20 text-slate-700"}`}>
-            {isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+          <div onClick={() => setLocation("/logos")} className="flex items-center space-x-3 p-2 rounded-md hover:bg-white/5 cursor-pointer">
+            <Image size={18} /> <span>Logos</span>
+          </div>
+          <div className="flex items-center space-x-3 p-2 rounded-md hover:bg-white/5 cursor-pointer">
+            <Settings size={18} /> <span>Configurações</span>
+          </div>
+        </nav>
+        <div className="p-4 border-t border-inherit">
+          <button onClick={() => setIsDark(!isDark)} className="flex items-center space-x-2 text-xs">
+            {isDark ? <Sun size={14} /> : <Moon size={14} />}
+            <span>Trocar Tema</span>
           </button>
         </div>
+      </aside>
 
-        <div className="grid lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-2">
-            <div className={`${cardBg} rounded-2xl p-8 shadow-2xl transition-all duration-300`}>
-              
-              {!isProcessing && !zipPath && (
-                <div className="space-y-6">
+      {/* Main Content */}
+      <main className="flex-1 p-8">
+        <header className="max-w-4xl mx-auto flex justify-between items-center mb-8">
+          <h1 className={`text-xl font-semibold ${colors.textHeading}`}>Início</h1>
+        </header>
+
+        <div className="max-w-4xl mx-auto">
+          <div className={`${colors.card} border rounded-md p-8 shadow-sm`}>
+            
+            {!isProcessing && !zipPath && (
+              <div className="space-y-6">
+                <div>
+                  <h2 className={`text-2xl font-bold ${colors.textHeading}`}>Gerar novos cards</h2>
+                  <p className="text-sm opacity-70">Carregue sua planilha .xlsx para iniciar o Puppeteer</p>
+                </div>
+
+                <div 
+                  onClick={() => document.getElementById("file-input")?.click()}
+                  onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                  onDragLeave={() => setIsDragging(false)}
+                  onDrop={(e) => { e.preventDefault(); setIsDragging(false); handleFileSelect(e.dataTransfer.files[0]); }}
+                  className={`border-2 border-dashed rounded-md p-10 text-center cursor-pointer transition-all ${
+                    isDragging ? 'border-[#58a6ff] bg-[#58a6ff]/5' : colors.card.split(' ')[1]
+                  }`}
+                >
+                  <Upload className={`mx-auto mb-4 ${colors.blue}`} size={32} />
+                  <p className="font-medium">Arraste ou clique para selecionar a planilha</p>
+                  <input id="file-input" type="file" accept=".xlsx" onChange={(e) => handleFileSelect(e.target.files?.[0])} className="hidden" />
+                </div>
+
+                {file && (
+                  <div className={`p-3 rounded border flex justify-between items-center ${isDark ? 'bg-[#0d1117]' : 'bg-[#f6f8fa]'}`}>
+                    <div className="flex items-center space-x-2">
+                      <CheckCircle2 size={16} className="text-[#3fb950]" />
+                      <span className="text-sm font-mono">{file.name}</span>
+                    </div>
+                    <Button variant="ghost" size="sm" onClick={() => setFile(null)}>Remover</Button>
+                  </div>
+                )}
+
+                <Button 
+                  onClick={handleUpload} 
+                  disabled={!file} 
+                  className={`w-full text-white font-bold h-12 ${colors.accent}`}
+                >
+                  Iniciar Automação
+                </Button>
+              </div>
+            )}
+
+            {isProcessing && progress && (
+              <div className="py-10 space-y-6">
+                <div className="flex justify-between items-end">
                   <div>
-                    <h2 className={`text-2xl font-bold ${textPrimary} mb-2`}>Transforme suas Planilhas</h2>
-                    <p className={textSecondary}>Converta dados Excel em cards PDF profissionais em segundos</p>
+                    <h3 className="font-bold">Processando...</h3>
+                    <p className="text-sm opacity-60">{progress.currentCard}</p>
                   </div>
-                  <div onClick={() => document.getElementById("file-input")?.click()} onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop} className={`border-2 border-dashed rounded-xl p-12 text-center cursor-pointer transition-all duration-300 ${uploadBg} ${uploadBorder}`}>
-                    <div className="flex flex-col items-center space-y-3 pointer-events-none">
-                      <div className={`p-4 rounded-full ${isDark ? 'bg-black/20' : 'bg-black/5'}`}><Upload className={`w-8 h-8 ${accentColor}`} /></div>
-                      <div>
-                        <p className={`font-semibold ${textPrimary}`}>Clique ou arraste seu arquivo</p>
-                        <p className={`text-sm ${textSecondary} mt-1`}>Apenas arquivos .xlsx (máximo 10MB)</p>
-                      </div>
-                    </div>
-                    <input id="file-input" type="file" accept=".xlsx" onChange={handleInputChange} className="hidden" />
-                  </div>
-                  {file && (
-                    <div className={`${isDark ? 'bg-black/20' : 'bg-black/5'} rounded-lg p-4 flex items-center justify-between border ${borderColor}`}>
-                      <div className="flex items-center space-x-3">
-                        <CheckCircle2 className={`w-5 h-5 ${accentColor}`} />
-                        <div>
-                          <p className={`font-medium ${textPrimary}`}>{file.name}</p>
-                          <p className={`text-sm ${textSecondary}`}>{(file.size / 1024).toFixed(2)} KB</p>
-                        </div>
-                      </div>
-                      <Button variant="ghost" size="sm" onClick={() => { setFile(null); setError(null); }} className={`${textSecondary} hover:${textPrimary}`}>Remover</Button>
-                    </div>
-                  )}
-                  {error && (
-                    <div className={`${isDark ? 'bg-red-500/20 border-red-400/50' : 'bg-red-500/10 border-red-500/20'} rounded-lg p-4 flex items-start space-x-3`}>
-                      <AlertCircle className={`w-5 h-5 ${isDark ? 'text-red-300' : 'text-red-600'} flex-shrink-0 mt-0.5`} />
-                      <div>
-                        <p className={`font-medium ${isDark ? 'text-red-200' : 'text-red-800'}`}>Erro</p>
-                        <p className={`text-sm ${isDark ? 'text-red-300' : 'text-red-700'}`}>{error}</p>
-                      </div>
-                    </div>
-                  )}
-                  <Button onClick={handleUpload} disabled={!file || isProcessing} className={`w-full text-white py-6 text-lg font-semibold rounded-lg transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed ${isDark ? 'bg-cyan-500/80 hover:bg-cyan-500' : 'bg-blue-600 hover:bg-blue-700'}`}>
-                    Processar Planilha
-                  </Button>
+                  <span className="text-xs font-mono">{progress.percentage}%</span>
                 </div>
-              )}
-
-              {isProcessing && progress && (
-                <div className="space-y-8">
-                  <div className="text-center">
-                    <div className={`inline-flex items-center justify-center w-20 h-20 rounded-full mb-4 ${isDark ? "bg-black/20" : "bg-black/5"}`}><div className="animate-spin"><Hourglass className={`w-10 h-10 ${accentColor}`} /></div></div>
-                    <h2 className={`text-2xl font-bold ${textPrimary} mb-2`}>Processando Cards</h2>
-                    <p className={textSecondary}>{progress.currentCard}</p>
-                  </div>
-                  <div className="space-y-3">
-                    <div className="flex justify-between items-center text-sm"><span className={`font-medium ${textPrimary}`}>Progresso</span><span className={`font-bold ${accentColor}`}>{progress.percentage}%</span></div>
-                    <div className={`w-full h-3 rounded-full overflow-hidden ${isDark ? "bg-black/30" : "bg-black/10"}`}><div className="h-full bg-gradient-to-r from-cyan-400 to-blue-500 transition-all duration-300" style={{ width: `${progress.percentage}%` }} /></div>
-                  </div>
-                  <div className="grid grid-cols-3 gap-4">
-                    {[{ label: "Processados", value: progress.processed }, { label: "Total", value: progress.total }, { label: "Restantes", value: progress.total - progress.processed }].map((stat, i) => (
-                      <div key={i} className={`rounded-lg p-4 text-center border ${isDark ? 'bg-black/20 border-white/10' : 'bg-black/5 border-slate-400/20'}`}><p className={`text-2xl font-bold ${accentColor}`}>{stat.value}</p><p className={`text-xs ${textSecondary} mt-1`}>{stat.label}</p></div>
-                    ))}
-                  </div>
+                <div className={`w-full h-2 rounded-full ${isDark ? 'bg-[#30363d]' : 'bg-[#d0d7de]'}`}>
+                  <div className="h-full bg-[#2f81f7] rounded-full transition-all duration-300" style={{ width: `${progress.percentage}%` }} />
                 </div>
-              )}
-
-              {!isProcessing && zipPath && (
-                <div className="space-y-6">
-                  <div className="text-center">
-                    <div className={`inline-flex items-center justify-center w-20 h-20 rounded-full mb-4 ${isDark ? 'bg-green-500/20' : 'bg-green-500/10'}`}><CheckCircle2 className={`w-10 h-10 ${isDark ? 'text-green-300' : 'text-green-600'}`} /></div>
-                    <h2 className={`text-2xl font-bold ${textPrimary} mb-2`}>Processamento Concluído!</h2>
-                    <p className={textSecondary}>{progress?.total} cards foram gerados com sucesso</p>
-                  </div>
-                  <div className={`${isDark ? 'bg-green-500/20 border-green-400/50' : 'bg-green-500/10 border-green-500/20'} rounded-lg p-6 border`}><div className="flex items-center justify-between"><span className={`font-medium ${isDark ? 'text-green-200' : 'text-green-800'}`}>Cards Gerados</span><span className={`text-3xl font-bold ${isDark ? 'text-green-300' : 'text-green-600'}`}>{progress?.total}</span></div></div>
-                  <Button onClick={handleDownload} className="w-full bg-green-600 hover:bg-green-500 text-white py-6 text-lg font-semibold rounded-lg transition-all duration-300 flex items-center justify-center space-x-2"><Download className="w-5 h-5" /><span>Baixar Cards (ZIP)</span></Button>
-                  <Button onClick={() => { setFile(null); setZipPath(null); setProgress(null); setError(null); setOriginalFileName(null); }} className={`w-full text-white py-6 text-lg font-semibold rounded-lg transition-all duration-300 ${isDark ? 'bg-cyan-500/80 hover:bg-cyan-500' : 'bg-blue-600 hover:bg-blue-700'}`}>Novo Processamento</Button>
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="space-y-4">
-            {[{ icon: "✨", title: "Múltiplos Tipos", description: "Cupons, Promoções, Quedas de Preço, Cashback e BC" }, { icon: "⚡", title: "Processamento Rápido", description: "Geração paralela com progresso em tempo real" }, { icon: "📦", title: "Download Fácil", description: "Todos os cards em um arquivo ZIP" }].map((feature, i) => (
-              <div key={i} className={`${cardBg} rounded-xl p-5 shadow-lg transition-all duration-300 hover:border-white/40`}>
-                <div className="flex items-start space-x-4">
-                  <div className="text-2xl mt-1">{feature.icon}</div>
-                  <div>
-                    <h3 className={`font-semibold ${textPrimary} mb-1`}>{feature.title}</h3>
-                    <p className={`text-sm ${textSecondary}`}>{feature.description}</p>
-                  </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <StatBox label="Concluídos" value={progress.processed} isDark={isDark} />
+                  <StatBox label="Total" value={progress.total} isDark={isDark} />
+                  <StatBox label="Restantes" value={progress.total - progress.processed} isDark={isDark} />
                 </div>
               </div>
-            ))}
-            <Button onClick={() => setLocation("/logos")} className={`w-full text-white py-6 text-lg font-semibold rounded-lg transition-all duration-300 flex items-center justify-center space-x-2 ${isDark ? 'bg-purple-600/80 hover:bg-purple-600' : 'bg-purple-600 hover:bg-purple-700'}`}>
-              <Image className="w-5 h-5" />
-              <span>Gerenciar Logos</span>
-            </Button>
-          </div>
-        </div>
+            )}
 
-        <div className={`mt-16 pt-8 border-t ${borderColor} text-center`}>
-          <p className={`text-sm ${textSecondary}`}>
-            Desenvolvido por Esio Lima - Versão 2.3.1
-          </p>
+            {zipPath && (
+              <div className="text-center py-10 space-y-6">
+                <div className="bg-[#238636]/10 p-4 rounded-full inline-block">
+                  <Download className="text-[#3fb950]" size={40} />
+                </div>
+                <h2 className="text-2xl font-bold">Arquivo pronto!</h2>
+                <Button onClick={() => window.open(`/api/download?zipPath=${zipPath}`)} className={`w-full h-12 ${colors.accent}`}>
+                  Baixar Pacote ZIP
+                </Button>
+                <Button variant="link" onClick={() => {setZipPath(null); setFile(null);}} className={colors.blue}>
+                  Gerar mais cards
+                </Button>
+              </div>
+            )}
+
+          </div>
+          
+          <footer className="mt-8 text-center text-xs opacity-50">
+            Esio Lima • Design & Code • v2.3.1
+          </footer>
         </div>
-      </div>
+      </main>
+    </div>
+  );
+}
+
+function StatBox({ label, value, isDark }: { label: string, value: number, isDark: boolean }) {
+  return (
+    <div className={`p-4 border rounded-md text-center ${isDark ? 'bg-[#0d1117] border-[#30363d]' : 'bg-[#f6f8fa] border-[#d0d7de]'}`}>
+      <div className="text-lg font-bold">{value}</div>
+      <div className="text-[10px] uppercase opacity-60 tracking-wider">{label}</div>
     </div>
   );
 }
